@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AudioContext Message Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar for log area */
+        .log-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        .log-container::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .log-container::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .log-container::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8 font-sans">
+
+    <div class="max-w-3xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+        
+        <!-- Header -->
+        <div class="bg-indigo-600 p-6">
+            <h1 class="text-2xl font-bold text-white">AudioContext Suspension Test</h1>
+            <p class="text-indigo-100 mt-2">Test message passing (MessagePort) behavior when the AudioContext is suspended.</p>
+        </div>
+
+        <!-- Controls Area -->
+        <div class="p-6 border-b border-gray-200">
+            
+            <!-- Status Display -->
+            <div class="flex items-center justify-between mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <div>
+                    <span class="text-gray-500 text-sm font-semibold uppercase tracking-wider">Context State</span>
+                    <div id="stateDisplay" class="text-xl font-bold text-gray-800 mt-1">Uninitialized</div>
+                </div>
+                <div>
+                    <span class="text-gray-500 text-sm font-semibold uppercase tracking-wider">Current Time</span>
+                    <div id="timeDisplay" class="text-xl font-mono text-gray-800 mt-1">0.000s</div>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <button id="btnInit" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded transition shadow">
+                    Initialize Audio
+                </button>
+                
+                <button id="btnSuspend" disabled class="bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 px-4 rounded transition shadow disabled:opacity-50 disabled:cursor-not-allowed">
+                    Suspend Context
+                </button>
+
+                <button id="btnResume" disabled class="hidden bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded transition shadow disabled:opacity-50 disabled:cursor-not-allowed">
+                    Resume Context
+                </button>
+                
+                <button id="btnPing" disabled class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded transition shadow disabled:opacity-50 disabled:cursor-not-allowed">
+                    Send "Ping"
+                </button>
+            </div>
+            
+            <p class="text-sm text-gray-500 mt-4 italic">
+                Note: "Ping" sends a message to the AudioWorklet. "Pong" is the reply. <br>
+                If "Pong" arrives while suspended, the MessagePort is still active independently of the suspended process callbacks.
+            </p>
+        </div>
+
+        <!-- Logs Area -->
+        <div class="p-6 bg-gray-900 text-green-400 font-mono text-sm h-96 overflow-y-auto log-container flex flex-col-reverse" id="logArea">
+            <!-- Logs will be inserted here -->
+            <div class="text-gray-500 pb-2">Waiting for logs...</div>
+        </div>
+        
+        <div class="bg-gray-800 px-6 py-2 text-right">
+            <button onclick="clearLogs()" class="text-xs text-gray-400 hover:text-white underline">Clear Logs</button>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Configuration ---
+        let audioContext = null;
+        let pingPongNode = null;
+        let timerInterval = null;
+
+        // --- UI Elements ---
+        const stateDisplay = document.getElementById('stateDisplay');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const btnInit = document.getElementById('btnInit');
+        const btnSuspend = document.getElementById('btnSuspend');
+        const btnResume = document.getElementById('btnResume');
+        const btnPing = document.getElementById('btnPing');
+        const logArea = document.getElementById('logArea');
+
+        // --- Worklet Code (Inline to keep single file) ---
+        const workletCode = `
+            class PingPongProcessor extends AudioWorkletProcessor {
+                constructor() {
+                    super();
+                    this.port.onmessage = (event) => {
+                        // Log inside the worklet (will show in browser console)
+                        console.log('[Worklet] Received:', event.data);
+                        
+                        if (event.data.type === 'ping') {
+                            // Simulate a tiny bit of processing or just reply immediately
+                            this.port.postMessage({
+                                type: 'pong',
+                                originalTime: event.data.time,
+                                replyTime: currentTime // 'currentTime' is global in WorkletScope
+                            });
+                        }
+                    };
+                }
+
+                process(inputs, outputs, parameters) {
+                    // We don't need to generate audio, just keep the processor alive
+                    // Returning true forces the browser to keep calling process()
+                    return true;
+                }
+            }
+            registerProcessor('ping-pong-processor', PingPongProcessor);
+        `;
+
+        // --- Logging Utility ---
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const div = document.createElement('div');
+            div.className = "mb-1 border-b border-gray-800 pb-1 last:border-0";
+            
+            let colorClass = "text-green-400";
+            let prefix = "INFO";
+            
+            if (type === 'send') { colorClass = "text-cyan-400"; prefix = "SEND"; }
+            if (type === 'receive') { colorClass = "text-yellow-400"; prefix = "RECV"; }
+            if (type === 'error') { colorClass = "text-red-400"; prefix = "ERR"; }
+            if (type === 'state') { colorClass = "text-purple-400"; prefix = "STATE"; }
+
+            div.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> <span class="${colorClass} font-bold">[${prefix}]</span> ${message}`;
+            
+            // Insert at the beginning (since flex-col-reverse is used, this actually pushes it to the bottom visually if we appended, 
+            // but for standard log reading top-down history, we usually append. 
+            // However, with flex-col-reverse, the first child is at the bottom.
+            // Let's actually just prepend to the top of the HTML (visually bottom if reverse) 
+            // Standard console style: Newest at bottom.
+            // Let's remove flex-col-reverse and use standard scrolling.
+            
+            logArea.insertBefore(div, logArea.firstChild);
+            console.log(`[${prefix}] ${message}`);
+        }
+
+        function clearLogs() {
+            logArea.innerHTML = '<div class="text-gray-500 pb-2">Logs cleared...</div>';
+        }
+
+        // --- Audio Logic ---
+        async function initAudio() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioContext();
+
+                // Create a blob from the worklet code
+                const blob = new Blob([workletCode], { type: 'application/javascript' });
+                const workletUrl = URL.createObjectURL(blob);
+
+                log("Loading AudioWorklet...", "info");
+                await audioContext.audioWorklet.addModule(workletUrl);
+                
+                log("AudioWorklet loaded successfully.", "info");
+
+                // Create the node
+                pingPongNode = new AudioWorkletNode(audioContext, 'ping-pong-processor');
+                
+                // Handle messages from the processor (Worklet -> Main Thread)
+                pingPongNode.port.onmessage = (event) => {
+                    if (event.data.type === 'pong') {
+                        const latency = (audioContext.currentTime - event.data.originalTime).toFixed(4);
+                        log(`Received 'Pong' from Worklet. (Context Time: ${event.data.replyTime.toFixed(3)}s)`, "receive");
+                    }
+                };
+
+                // Connect to destination to ensure the 'process' method is called (though we return true anyway)
+                // If we don't connect, some browsers might garbage collect or not start the worklet.
+                pingPongNode.connect(audioContext.destination);
+
+                // Start UI updates
+                startStatusLoop();
+                updateButtons();
+                
+                // Clean up blob
+                URL.revokeObjectURL(workletUrl);
+
+                log("Audio System Initialized.", "state");
+
+            } catch (e) {
+                log("Error initializing audio: " + e.message, "error");
+                console.error(e);
+            }
+        }
+
+        function startStatusLoop() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (audioContext) {
+                    stateDisplay.innerText = audioContext.state.charAt(0).toUpperCase() + audioContext.state.slice(1);
+                    timeDisplay.innerText = audioContext.currentTime.toFixed(3) + 's';
+                    
+                    // Visual cues for state
+                    if (audioContext.state === 'running') {
+                        stateDisplay.className = "text-xl font-bold text-green-600 mt-1";
+                    } else if (audioContext.state === 'suspended') {
+                        stateDisplay.className = "text-xl font-bold text-amber-600 mt-1";
+                    } else {
+                        stateDisplay.className = "text-xl font-bold text-gray-800 mt-1";
+                    }
+                }
+            }, 100);
+        }
+
+        // --- Interaction Handlers ---
+
+        btnInit.addEventListener('click', async () => {
+            await initAudio();
+            btnInit.classList.add('hidden');
+            btnSuspend.disabled = false;
+            btnPing.disabled = false;
+            
+            // Resume immediately if browser policy started it suspended
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+            updateButtons();
+        });
+
+        btnSuspend.addEventListener('click', async () => {
+            if (!audioContext) return;
+            log("Suspending AudioContext...", "state");
+            await audioContext.suspend();
+            log("AudioContext Suspended.", "state");
+            updateButtons();
+        });
+
+        btnResume.addEventListener('click', async () => {
+            if (!audioContext) return;
+            log("Resuming AudioContext...", "state");
+            await audioContext.resume();
+            log("AudioContext Resumed.", "state");
+            updateButtons();
+        });
+
+        btnPing.addEventListener('click', () => {
+            if (!pingPongNode) return;
+            
+            const payload = {
+                type: 'ping',
+                time: audioContext.currentTime
+            };
+            
+            log(`Sending 'Ping'... (Context state: ${audioContext.state})`, "send");
+            pingPongNode.port.postMessage(payload);
+        });
+
+        function updateButtons() {
+            if (!audioContext) return;
+
+            if (audioContext.state === 'running') {
+                btnSuspend.classList.remove('hidden');
+                btnSuspend.disabled = false;
+                btnResume.classList.add('hidden');
+            } else {
+                btnSuspend.classList.add('hidden');
+                btnResume.classList.remove('hidden');
+                btnResume.disabled = false;
+            }
+        }
+
+    </script>
+</body>
+</html>
