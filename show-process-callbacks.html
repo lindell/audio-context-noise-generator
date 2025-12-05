@@ -11,16 +11,13 @@
             background-color: #111827;
             color: #f3f4f6;
         }
-        .activity-light {
-            box-shadow: 0 0 10px currentColor;
-            transition: background-color 0.1s, box-shadow 0.1s;
+        /* Ripple Animation for the outer ring */
+        @keyframes ripple {
+            0% { transform: scale(1); opacity: 0.6; border-width: 2px; }
+            100% { transform: scale(1.6); opacity: 0; border-width: 0px; }
         }
-        .pulse-anim {
-            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-        }
-        @keyframes pulse-ring {
-            0% { transform: scale(0.33); opacity: 1; }
-            80%, 100% { transform: scale(2); opacity: 0; }
+        .animate-ripple {
+            animation: ripple 0.6s cubic-bezier(0, 0, 0.2, 1) forwards;
         }
     </style>
 </head>
@@ -42,40 +39,53 @@
         </div>
 
         <!-- Visualizer Area -->
-        <div class="p-8 flex flex-col items-center justify-center bg-gray-900/50 relative min-h-[160px]">
+        <div class="p-8 flex flex-col items-center justify-center bg-gray-900/50 min-h-[220px]">
             
-            <!-- Connection Line -->
-            <div class="absolute w-full h-1 bg-gray-700 top-1/2 -translate-y-1/2 z-0"></div>
-            
-            <div class="flex items-center justify-between w-full z-10 relative px-4">
+            <div class="flex items-start justify-between w-full relative px-8">
                 
-                <!-- Source Node Representation -->
-                <div class="flex flex-col items-center gap-2">
-                    <div id="node-status" class="w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center border-2 border-gray-500 transition-colors duration-300">
-                        <span class="text-xs font-mono">NODE</span>
-                    </div>
-                    <span class="text-xs text-gray-500 uppercase tracking-wider">Worklet</span>
-                </div>
+                <!-- Background Connection Line -->
+                <!-- Changed left-0/w-full to left-20/right-20 to stop exactly at node centers -->
+                <div class="absolute left-20 right-20 h-1 bg-gray-700 top-8 -translate-y-1/2 z-0"></div>
+                
+                <!-- Active Connection Line -->
+                <!-- Changed left-0/w-full to left-20/right-20 -->
+                <div id="connection-line-active" class="absolute left-20 right-20 h-1 bg-blue-500 top-8 -translate-y-1/2 z-0 opacity-0 transition-opacity duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
 
-                <!-- Activity LED -->
-                <div class="flex flex-col items-center">
-                    <div id="activity-led" class="w-6 h-6 rounded-full bg-red-900 border border-red-700 transition-all duration-75"></div>
-                    <span class="text-[10px] text-gray-500 mt-2 font-mono" id="msg-counter">0 msgs</span>
+                <!-- Source Node Representation -->
+                <!-- Added relative and z-10 to ensure it sits ON TOP of the line -->
+                <div class="flex flex-col items-center gap-2 w-24 relative z-10">
+                    <!-- Pulse Ring Wrapper -->
+                    <div class="relative w-16 h-16">
+                        <!-- The expanding ring -->
+                        <div id="pulse-ring" class="absolute inset-0 rounded-full border-blue-400 bg-blue-500/20 box-content hidden"></div>
+                        
+                        <!-- The Node Circle itself -->
+                        <div id="node-status" class="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center border-4 border-gray-500 transition-colors duration-300 relative z-20">
+                            <span class="text-[10px] font-mono font-bold">NODE</span>
+                        </div>
+                    </div>
+
+                    <span class="text-xs text-gray-500 uppercase tracking-wider font-semibold">Worklet</span>
+                    <!-- Callback Counter -->
+                    <div class="h-6 flex items-center justify-center">
+                        <span class="text-[10px] text-blue-400 font-mono bg-gray-800/80 px-2 py-0.5 rounded border border-gray-700 hidden" id="msg-counter-badge">
+                            <span id="msg-counter">0</span>
+                        </span>
+                    </div>
                 </div>
 
                 <!-- Destination Representation -->
-                <div class="flex flex-col items-center gap-2">
-                    <div id="dest-status" class="w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center border-2 border-gray-500">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <!-- Added relative and z-10 -->
+                <div class="flex flex-col items-center gap-2 w-24 relative z-10">
+                    <div id="dest-status" class="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center border-4 border-gray-500 z-20 bg-gray-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
                         </svg>
                     </div>
-                    <span class="text-xs text-gray-500 uppercase tracking-wider">Speaker</span>
+                    <span class="text-xs text-gray-500 uppercase tracking-wider font-semibold">Speaker</span>
+                    <div class="h-6"></div> <!-- Spacer -->
                 </div>
             </div>
-
-            <!-- Connection Status Text -->
-            <div id="connection-line-active" class="absolute w-1/2 h-1 bg-blue-500 top-1/2 -translate-y-1/2 left-1/4 opacity-0 transition-opacity duration-300"></div>
         </div>
 
         <!-- Controls -->
@@ -112,7 +122,6 @@
 
     <script>
         // 1. The Audio Worklet Processor Code (Inline)
-        // We create a Blob URL from this string to load it as a module
         const workletCode = `
             class HeartbeatProcessor extends AudioWorkletProcessor {
                 constructor() {
@@ -121,7 +130,6 @@
                     this.lastTime = currentTime;
                     this.alive = true;
 
-                    // Listen for messages from the main thread
                     this.port.onmessage = (event) => {
                         if (event.data.type === 'kill') {
                             this.alive = false;
@@ -130,37 +138,31 @@
                 }
 
                 process(inputs, outputs, parameters) {
-                    // If we were told to stop, return false immediately (or after one last cleanup)
-                    // The browser will stop calling process() shortly after.
                     if (!this.alive) return false;
 
-                    // This method is called every render quantum (approx 128 samples)
                     this.counter++;
 
-                    // Every 10th callback, send a message back to the main thread
+                    // Send message every 10 callbacks (approx 30ms)
                     if (this.counter % 10 === 0) {
                         this.port.postMessage({
                             type: 'heartbeat',
                             count: this.counter,
-                            audioTime: currentTime,
-                            delta: currentTime - this.lastTime
+                            audioTime: currentTime
                         });
                         this.lastTime = currentTime;
                     }
 
-                    // Generate White Noise (Soft Static)
+                    // Generate White Noise
                     const output = outputs[0];
                     if (output) {
                         for (let channel = 0; channel < output.length; channel++) {
                             const outputChannel = output[channel];
                             for (let i = 0; i < outputChannel.length; i++) {
-                                // Generate random values between -1 and 1, scaled to 5% volume
                                 outputChannel[i] = (Math.random() * 2 - 1) * 0.05;
                             }
                         }
                     }
 
-                    // Return true to keep alive, false to let the browser kill the node
                     return this.alive;
                 }
             }
@@ -171,6 +173,7 @@
         let audioCtx;
         let heartbeatNode;
         let isConnected = false;
+        let localMsgCount = 0; 
 
         // UI Elements
         const btnInit = document.getElementById('btn-init');
@@ -179,13 +182,15 @@
         const btnDisconnect = document.getElementById('btn-disconnect');
         const btnKill = document.getElementById('btn-kill');
         const consoleLog = document.getElementById('console-log');
-        const activityLed = document.getElementById('activity-led');
+        
+        // Visualizer Elements
         const msgCounter = document.getElementById('msg-counter');
+        const msgCounterBadge = document.getElementById('msg-counter-badge');
         const nodeStatus = document.getElementById('node-status');
+        const pulseRing = document.getElementById('pulse-ring');
         const destStatus = document.getElementById('dest-status');
         const connLine = document.getElementById('connection-line-active');
 
-        // Logging helper
         function log(msg) {
             const p = document.createElement('p');
             p.textContent = `> ${msg}`;
@@ -193,12 +198,19 @@
             consoleLog.scrollTop = consoleLog.scrollHeight;
         }
 
+        // Helper for pulsing animation (Now on the Ring)
+        function triggerPulse() {
+            pulseRing.classList.remove('hidden');
+            pulseRing.classList.remove('animate-ripple');
+            void pulseRing.offsetWidth; // Force reflow
+            pulseRing.classList.add('animate-ripple');
+        }
+
         // 3. Initialization
         btnInit.addEventListener('click', async () => {
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 
-                // Create Blob for the processor
                 const blob = new Blob([workletCode], { type: 'application/javascript' });
                 const url = URL.createObjectURL(blob);
 
@@ -206,22 +218,19 @@
                 await audioCtx.audioWorklet.addModule(url);
                 log('Module added.');
 
-                // Create the Node
                 heartbeatNode = new AudioWorkletNode(audioCtx, 'heartbeat-processor');
 
-                // Handle Messages from the Processor
+                // Handle Messages
                 heartbeatNode.port.onmessage = (event) => {
                     if (event.data.type === 'heartbeat') {
-                        // Display the actual Process Callback Count from the processor
-                        msgCounter.textContent = `Callback #${event.data.count}`;
-                        
-                        // Flash LED
-                        activityLed.style.backgroundColor = '#10b981'; // bright green
-                        activityLed.style.boxShadow = '0 0 15px #10b981';
-                        setTimeout(() => {
-                            activityLed.style.backgroundColor = '#7f1d1d'; // dark red
-                            activityLed.style.boxShadow = 'none';
-                        }, 50);
+                        // 1. Update text constantly
+                        msgCounter.textContent = `#${event.data.count}`;
+
+                        // 2. Throttle animation (pulse every 20 messages ~ 600ms)
+                        localMsgCount++;
+                        if (localMsgCount % 20 === 0) {
+                            triggerPulse();
+                        }
                     }
                 };
 
@@ -232,6 +241,8 @@
                 btnConnect.disabled = false;
                 btnDisconnect.disabled = true;
                 btnKill.disabled = false;
+                
+                msgCounterBadge.classList.remove('hidden');
                 
                 nodeStatus.classList.remove('bg-gray-600', 'border-gray-500');
                 nodeStatus.classList.add('bg-blue-600', 'border-blue-400');
@@ -248,11 +259,9 @@
         btnConnect.addEventListener('click', () => {
             if (!audioCtx || !heartbeatNode) return;
             
-            // Connect to destination
             heartbeatNode.connect(audioCtx.destination);
             isConnected = true;
             
-            // UI Updates
             btnConnect.disabled = true;
             btnDisconnect.disabled = false;
             
@@ -275,7 +284,6 @@
             heartbeatNode.disconnect();
             isConnected = false;
 
-            // UI Updates
             btnConnect.disabled = false;
             btnDisconnect.disabled = true;
             
@@ -295,8 +303,15 @@
             
             btnKill.disabled = true;
             btnKill.textContent = 'Node Killed';
+            
+            // Visual dead state
             nodeStatus.classList.remove('bg-blue-600', 'border-blue-400');
-            nodeStatus.classList.add('bg-red-600', 'border-red-400');
+            nodeStatus.classList.add('bg-red-900', 'border-red-700');
+            msgCounterBadge.classList.remove('text-blue-400', 'border-gray-700');
+            msgCounterBadge.classList.add('text-red-500', 'border-red-900', 'line-through');
+            
+            // Stop Pulse
+            pulseRing.classList.add('hidden');
         });
 
     </script>
