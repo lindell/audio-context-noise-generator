@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Worker Memory Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .log-entry {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden">
+        
+        <!-- Header -->
+        <div class="bg-gray-800 p-6 text-white flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold">Worker Manager</h1>
+                <p class="text-gray-400 text-sm">Memory Allocation Demo</p>
+            </div>
+            <div id="status-indicator" class="flex items-center gap-2 bg-gray-700 px-3 py-1 rounded-full text-xs font-mono transition-colors">
+                <div id="status-dot" class="w-2 h-2 rounded-full bg-red-500"></div>
+                <span id="status-text">Stopped</span>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="p-6 grid grid-cols-2 gap-4 border-b border-gray-100">
+            <button id="create-btn" class="flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 border-emerald-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300 transition-all active:scale-95">
+                <i class="fa-solid fa-microchip text-2xl"></i>
+                <span class="font-semibold">Create Worker</span>
+                <span class="text-xs opacity-75">+16MB Buffer</span>
+            </button>
+
+            <button id="kill-btn" disabled class="flex flex-col items-center justify-center gap-2 p-4 rounded-lg border-2 border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed transition-all active:scale-95 group" id="kill-btn-styles">
+                <i class="fa-solid fa-power-off text-2xl group-hover:text-red-600 transition-colors"></i>
+                <span class="font-semibold group-hover:text-red-700 transition-colors">Kill Worker</span>
+                <span class="text-xs opacity-75">Free Memory</span>
+            </button>
+        </div>
+
+        <!-- Log Output -->
+        <div class="bg-gray-900 text-green-400 font-mono text-xs p-4 h-48 overflow-y-auto" id="log-container">
+            <div class="opacity-50 border-b border-gray-700 pb-2 mb-2">System Ready...</div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Define the Worker Code inline ---
+        // We use a function and convert it to a string to simulate a separate file
+        const workerFunction = () => {
+            self.onmessage = (e) => {
+                if (e.data === 'init') {
+                    try {
+                        self.postMessage({ type: 'log', text: 'Worker: Process started.' });
+                        
+                        // 16MB Calculation: 16 * 1024 * 1024 bytes
+                        const bytes = 16 * 1024 * 1024;
+                        
+                        // Allocate the buffer
+                        // We attach it to 'self' to ensure it isn't garbage collected immediately
+                        self.heavyData = new ArrayBuffer(bytes);
+                        
+                        // Create a view and fill it with some data to ensure pages are actually committed by the OS
+                        const view = new Uint8Array(self.heavyData);
+                        view.fill(1); 
+                        
+                        self.postMessage({ 
+                            type: 'success', 
+                            text: `Worker: Allocated ${bytes.toLocaleString()} bytes (16MB).`
+                        });
+
+                    } catch (err) {
+                        self.postMessage({ type: 'error', text: err.message });
+                    }
+                }
+            };
+        };
+
+        // --- 2. Main Thread Logic ---
+        
+        let activeWorker = null;
+        const createBtn = document.getElementById('create-btn');
+        const killBtn = document.getElementById('kill-btn');
+        const logContainer = document.getElementById('log-container');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+
+        // Helper to convert function to Blob URL
+        function createWorkerUrl() {
+            const code = `(${workerFunction.toString()})()`;
+            const blob = new Blob([code], { type: 'application/javascript' });
+            return URL.createObjectURL(blob);
+        }
+
+        // Logger function
+        function log(msg, type = 'info') {
+            const div = document.createElement('div');
+            div.className = 'log-entry mb-1';
+            
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            let colorClass = 'text-gray-300';
+            let prefix = 'INFO';
+
+            if (type === 'success') { colorClass = 'text-green-400'; prefix = 'OK'; }
+            if (type === 'error') { colorClass = 'text-red-400'; prefix = 'ERR'; }
+            if (type === 'system') { colorClass = 'text-blue-300'; prefix = 'SYS'; }
+
+            div.innerHTML = `<span class="opacity-50">[${time}]</span> <span class="${colorClass}">[${prefix}] ${msg}</span>`;
+            logContainer.appendChild(div);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // --- Event Listeners ---
+
+        createBtn.addEventListener('click', () => {
+            if (activeWorker) return;
+
+            log('Initializing new worker thread...', 'system');
+            
+            const workerUrl = createWorkerUrl();
+            activeWorker = new Worker(workerUrl);
+
+            // Update UI
+            toggleUiState(true);
+
+            // Setup Listeners
+            activeWorker.onmessage = (e) => {
+                const { type, text } = e.data;
+                if (type === 'log') log(text);
+                if (type === 'success') {
+                    log(text, 'success');
+                }
+                if (type === 'error') log(text, 'error');
+            };
+
+            activeWorker.onerror = (err) => {
+                log(`Worker Error: ${err.message}`, 'error');
+            };
+
+            // Command the worker to allocate memory
+            activeWorker.postMessage('init');
+        });
+
+        killBtn.addEventListener('click', () => {
+            if (!activeWorker) return;
+
+            log('Terminating worker...', 'system');
+            
+            // Kill it
+            activeWorker.terminate();
+            activeWorker = null;
+
+            // UI cleanup
+            log('Worker terminated. Memory freed.', 'system');
+            toggleUiState(false);
+        });
+
+        function toggleUiState(isRunning) {
+            if (isRunning) {
+                // Set to Running
+                createBtn.disabled = true;
+                createBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                createBtn.classList.remove('hover:bg-emerald-100', 'active:scale-95');
+
+                killBtn.disabled = false;
+                killBtn.classList.remove('bg-gray-50', 'text-gray-400', 'cursor-not-allowed', 'border-gray-100');
+                killBtn.classList.add('bg-red-50', 'text-red-700', 'border-red-200', 'hover:bg-red-100', 'hover:border-red-300');
+                
+                statusDot.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse';
+                statusText.innerText = 'Running';
+                statusText.className = 'text-green-400';
+            } else {
+                // Set to Stopped
+                createBtn.disabled = false;
+                createBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                createBtn.classList.add('hover:bg-emerald-100', 'active:scale-95');
+
+                killBtn.disabled = true;
+                killBtn.classList.add('bg-gray-50', 'text-gray-400', 'cursor-not-allowed', 'border-gray-100');
+                killBtn.classList.remove('bg-red-50', 'text-red-700', 'border-red-200', 'hover:bg-red-100', 'hover:border-red-300');
+
+                statusDot.className = 'w-2 h-2 rounded-full bg-red-500';
+                statusText.innerText = 'Stopped';
+                statusText.className = 'text-gray-300';
+            }
+        }
+    </script>
+</body>
+</html>
