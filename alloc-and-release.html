@@ -55,27 +55,32 @@
                         <span class="text-xs bg-yellow-800 text-yellow-200 py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">Stops Process</span>
                     </button>
 
+                    <button id="btn-close-port" class="w-full py-3 px-4 bg-teal-600 hover:bg-teal-500 rounded-lg font-medium transition flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <span>4. Close Message Port</span>
+                        <span class="text-xs bg-teal-800 text-teal-200 py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">port.close()</span>
+                    </button>
+
                     <div class="border-t border-gray-700 my-4"></div>
 
                     <button id="btn-drop-ref" class="w-full py-3 px-4 bg-red-600 hover:bg-red-500 rounded-lg font-medium transition flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        <span>4. Remove Main Thread Ref</span>
+                        <span>5. Remove Main Thread Ref</span>
                         <span class="text-xs bg-red-800 text-red-200 py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">node = null</span>
                     </button>
 
                     <button id="btn-drop-buffer" class="w-full py-3 px-4 bg-purple-600 hover:bg-purple-500 rounded-lg font-medium transition flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        <span>5. Remove Buffer (Worklet)</span>
+                        <span>6. Remove Buffer (Worklet)</span>
                         <span class="text-xs bg-purple-800 text-purple-200 py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">buffer = null</span>
                     </button>
 
                     <div class="border-t border-gray-700 my-4"></div>
 
                     <button id="btn-close-ctx" class="w-full py-3 px-4 bg-gray-600 hover:bg-gray-500 rounded-lg font-medium transition flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        <span>6. Close AudioContext</span>
+                        <span>7. Close AudioContext</span>
                         <span class="text-xs bg-gray-800 text-gray-200 py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">ctx.close()</span>
                     </button>
 
                     <button id="btn-drop-ctx-ref" class="w-full py-3 px-4 bg-orange-600 hover:bg-orange-500 rounded-lg font-medium transition flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                        <span>7. Remove Context Ref</span>
+                        <span>8. Remove Context Ref</span>
                         <span class="text-xs bg-orange-800 text-orange-200 py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition">ctx = null</span>
                     </button>
                 </div>
@@ -155,6 +160,7 @@
         const btnCreateCtx = document.getElementById('btn-create-ctx');
         const btnCreateNode = document.getElementById('btn-create-node');
         const btnReturnFalse = document.getElementById('btn-return-false');
+        const btnClosePort = document.getElementById('btn-close-port');
         const btnDropRef = document.getElementById('btn-drop-ref');
         const btnDropBuffer = document.getElementById('btn-drop-buffer');
         const btnCloseCtx = document.getElementById('btn-close-ctx');
@@ -256,6 +262,7 @@
 
                 btnCreateNode.disabled = true;
                 btnReturnFalse.disabled = false;
+                btnClosePort.disabled = false;
                 btnDropRef.disabled = false;
                 btnDropBuffer.disabled = false;
 
@@ -275,7 +282,18 @@
             btnReturnFalse.disabled = true;
         });
 
-        // 4. Remove Main Thread Reference
+        // 4. Close Message Port
+        btnClosePort.addEventListener('click', () => {
+            if (!workletNode) {
+                log('No node reference available.', 'error');
+                return;
+            }
+            workletNode.port.close();
+            log('Message port closed. No further messages can be sent or received.', 'info');
+            btnClosePort.disabled = true;
+        });
+
+        // 5. Remove Main Thread Reference
         btnDropRef.addEventListener('click', () => {
             if (!workletNode) {
                 log('Reference already removed.', 'warn');
@@ -291,6 +309,7 @@
             log('Note: JS reference is gone. Garbage collection is now possible if process() returns false.', 'info');
             updateStatus();
             btnDropRef.disabled = true;
+            btnClosePort.disabled = true; // Disable port close button if ref is gone
             
             // Check if user trapped themselves
             if (!btnDropBuffer.disabled && !btnDropBuffer.classList.contains('clicked-state')) {
@@ -298,19 +317,24 @@
             }
         });
 
-        // 5. Remove Buffer Reference (Inside Worklet)
+        // 6. Remove Buffer Reference (Inside Worklet)
         btnDropBuffer.addEventListener('click', () => {
             if (!workletNode) {
                 log('Cannot send command: Main thread reference is lost.', 'error');
                 return;
             }
+            // Note: If port is closed (Step 4), this postMessage will technically succeed in JS but won't reach the worklet.
+            // There is no easy synchronous way to check if a port is closed, so we send it blindly.
             workletNode.port.postMessage({ type: 'DROP_BUFFER' });
             log('Sent DROP_BUFFER command.', 'info');
+            if (btnClosePort.disabled && !btnDropRef.disabled) {
+                log('(Note: If you closed the port in Step 4, this message will not be received by the worklet)', 'warn');
+            }
             btnDropBuffer.disabled = true;
             btnDropBuffer.classList.add('clicked-state');
         });
 
-        // 6. Close Audio Context
+        // 7. Close Audio Context
         btnCloseCtx.addEventListener('click', async () => {
             if (!audioCtx) return;
             try {
@@ -321,11 +345,12 @@
                 btnCloseCtx.disabled = true;
                 
                 // Note: We DO NOT nullify audioCtx here anymore.
-                // We rely on Step 7 for that.
+                // We rely on Step 8 for that.
                 
                 // Reset other buttons for safety
                 btnCreateNode.disabled = true;
                 btnReturnFalse.disabled = true;
+                btnClosePort.disabled = true;
                 btnDropRef.disabled = true;
                 btnDropBuffer.disabled = true;
                 btnDropBuffer.classList.remove('clicked-state');
@@ -335,7 +360,7 @@
             }
         });
 
-        // 7. Remove Context Reference
+        // 8. Remove Context Reference
         btnDropCtxRef.addEventListener('click', () => {
             if (!audioCtx) {
                 log('Context reference already removed.', 'warn');
@@ -355,6 +380,7 @@
             // Ensure others are reset
             btnCreateNode.disabled = true;
             btnReturnFalse.disabled = true;
+            btnClosePort.disabled = true;
             btnDropRef.disabled = true;
             btnDropBuffer.disabled = true;
             btnDropBuffer.classList.remove('clicked-state');
